@@ -7,7 +7,7 @@ Attack reimplementations are for research and model safety/defense purposes alon
 Llama 2 7b:
     - Recover hidden dim $\pm 1$: 4095
     - Predict RMSNorm as normalization layer
-    - Last layer reconstructed with an RMS of $2 * 10^-5$
+    - Last layer reconstructed with an RMS of $2 * 10^{-5}$
 
 ### Techniques
 With All Logits Available:
