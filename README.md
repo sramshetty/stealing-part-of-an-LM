@@ -1,4 +1,4 @@
-# Stealing Part of a Language Model
+# Stealing Part of a Language Model (WIP)
 An unofficial implementation of ["Stealing Part of a Production Language Model"](https://arxiv.org/abs/2403.06634)
 
 ### Details
