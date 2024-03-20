@@ -17,7 +17,10 @@ With All Logits Available:
 
 With Top-K Logits and Logit-bias
 - [ ] Recover complete logit vector
-    - [ ] constrained logit-bias case
+    - [ ] Top-K logits
+    - [ ] Top-K logprobs
+    - [ ] Only generated logprobs  
+    - [ ] Top-1 Logprob
 
 Logprob-free
 - [ ] Recover complete logit vector
