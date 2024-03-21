@@ -1,13 +1,13 @@
-# Stealing Part of a Language Model
+# Stealing Part of a Language Model (WIP)
 An unofficial implementation of ["Stealing Part of a Production Language Model"](https://arxiv.org/abs/2403.06634)
 
 ### Details
 Attack reimplementations are for research and model safety/defense purposes alone.
 
 Llama 2 7b:
-    - Recover hidden dim $\pm 1$: 4095
-    - Predict RMSNorm as normalization layer
-    - Last layer reconstructed with an RMS of $2 * 10^-5$
+- Recover hidden dim $\pm 1$: 4095
+- Predict RMSNorm as normalization layer
+- Last layer reconstructed with an RMS of $2 * 10^{-5}$
 
 ### Techniques
 With All Logits Available:
@@ -17,7 +17,10 @@ With All Logits Available:
 
 With Top-K Logits and Logit-bias
 - [ ] Recover complete logit vector
-    - [ ] constrained logit-bias case
+    - [ ] Top-K logits
+    - [ ] Top-K logprobs
+    - [ ] Only generated logprobs  
+    - [ ] Top-1 Logprob
 
 Logprob-free
 - [ ] Recover complete logit vector
