@@ -1,6 +1,8 @@
 from tqdm import tqdm
+from typing import Callable
 
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler
 
 
@@ -10,12 +12,26 @@ from torch.utils.data import DataLoader, RandomSampler
 def get_q(
     llama,
     dataset,
-    logit_fn=None,
-    text_key: str = None,
+    text_key: str,
     n: int = 5000,
-    batch_size: int = 1
+    batch_size: int = 1,
+    logit_fn: Callable[[nn.Module, str], nn.Tensor] = None
 ):
+    """
+    Args:
+        llama: llama model
+        dataset: dataset to use for random prompt sampling
+        text_key: key in dataset that corresponds to the prompts
+        n (optional): the number of samples to produce logits for
+        batch_size (optional): batch size for model inference
+        logit_fn: method to use to compute logit vectors
+    
+    Returns:
+        q: matrix of logit vectors with size (n, l)
+    """
     q = torch.zeros(n, llama.tokenizer.n_words)
+
+    assert batch_size == 1, "Currently, only works with batch size of 1"
 
     random_sampler = RandomSampler(dataset, num_samples=n, generator=torch.Generator(device="cuda"))
     dataloader = DataLoader(
@@ -48,9 +64,20 @@ def direct_logits(
     llama,
     q,
     dataloader,
-    text_key,
-    batch_size,
+    text_key: str,
+    batch_size: int = 1,
 ):
+    """
+    Args:
+        llama: llama model
+        q: empty matrix of size (n, l) 
+        dataloader: dataloader that contains prompts as samples
+        text_key: key in dataset that corresponds to the prompts
+        batch_size (optional): batch size for model inference
+    
+    Returns:
+        q: matrix of logit vectors with size (n, l)
+    """
     for i, batch in enumerate(tqdm(dataloader)):
         prompts = batch[text_key]
         tokens = [llama.tokenizer.encode(p, bos=True, eos=False) for p in prompts]
@@ -79,13 +106,8 @@ def h_dim_extraction(
 ):
     """
     Args:
-        tokenizer: tokenizer to use for prompt encoding
-        model: model to find the hidden dimension of
-        dataset: dataset to use for random prompt sampling
-        text_key: key in dataset that corresponds to the prompts
-        n: the number of samples to produce logits for
-        batch_size (Optional): batch size for model inference
-        predict_norm (Optional): whehther to predict which normalization layer type is used
+        q: matrix of logit vectors with size (n, l)
+        predict_norm (optional): whehther to predict which normalization layer type is used
     
     Returns:
         u: unitary matrix
@@ -146,7 +168,7 @@ def layer_extraction(w, u, s, h_dim):
 # Paper Section 5 Methods
 #######################################################################################################################
 @torch.inference_mode()
-def incremental_logit_extraction(llama, prompt):
+def topk_logit_extraction(llama, prompt):
     """
     Incrementally construct logit vector by using logit biases to promote sets of tokens for each query.
     Subtract the bias from the output logits to find their actual values and repeat for all tokens.
