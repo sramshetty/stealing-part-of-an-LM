@@ -4,15 +4,78 @@ import torch
 from torch.utils.data import DataLoader, RandomSampler
 
 
-@torch.inference_mode()
-def h_dim_extraction(
-    tokenizer,
-    model,
+#######################################################################################################################
+# Paper Section 4 Methods
+#######################################################################################################################
+def get_q(
+    llama,
     dataset,
+    logit_fn=None,
+    text_key: str = None,
+    n: int = 5000,
+    batch_size: int = 1
+):
+    q = torch.zeros(n, llama.tokenizer.n_words)
+
+    random_sampler = RandomSampler(dataset, num_samples=n, generator=torch.Generator(device="cuda"))
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        sampler=random_sampler,
+        generator=torch.Generator(device="cuda")
+    )
+
+    if logit_fn:
+        for i, batch in enumerate(tqdm(dataloader)):
+            prompt = batch[text_key][0]
+            # add logits to q as we go
+            logits = logit_fn(llama, prompt)
+            q[i] = logits.to("cpu")
+    else:
+        direct_logits(
+            llama,
+            q,
+            dataloader,
+            text_key,
+            batch_size
+        )
+    
+    return q
+
+
+@torch.inference_mode()
+def direct_logits(
+    llama,
+    q,
+    dataloader,
     text_key,
-    n,
-    batch_size=4,
-    predict_norm=False
+    batch_size,
+):
+    for i, batch in enumerate(tqdm(dataloader)):
+        prompts = batch[text_key]
+        tokens = [llama.tokenizer.encode(p, bos=True, eos=False) for p in prompts]
+
+        # pad tokens following llama implementation
+        max_prompt_len = max(len(t) for t in tokens)
+        prompt_tokens = torch.full(
+            (batch_size, max_prompt_len),
+            llama.tokenizer.pad_id,
+            dtype=torch.long,
+            device="cuda"
+        )
+        for k, t in enumerate(tokens):
+            prompt_tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+
+        # add logits to q as we go
+        logits = llama.model(prompt_tokens, 0)[:, -1]
+        q[i * batch_size:i * (batch_size + 1)] = logits.to("cpu")
+    
+    return
+
+
+def h_dim_extraction(
+    q,
+    predict_norm: bool = False
 ):
     """
     Args:
@@ -29,38 +92,7 @@ def h_dim_extraction(
         s: singular values
         s_dim: log of the absolute singular values
         count: predicted hidden dimension size
-    """
-    l = model(torch.tensor([[0]]).to("cuda"), 0).size(-1)
-    q = torch.zeros(n, l)
-
-    random_sampler = RandomSampler(dataset, num_samples=n, generator=torch.Generator(device="cuda"))
-    dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        sampler=random_sampler,
-        generator=torch.Generator(device="cuda")
-    )
-
-    pad_id = tokenizer.pad_id
-    for i, batch in enumerate(tqdm(dataloader)):
-        prompts = batch[text_key]
-        tokens = [tokenizer.encode(p, bos=True, eos=False) for p in prompts]
-
-        # pad tokens following llama implementation
-        max_prompt_len = max(len(t) for t in tokens)
-        prompt_tokens = torch.full(
-            (batch_size, max_prompt_len),
-            pad_id,
-            dtype=torch.long,
-            device="cuda"
-        )
-        for k, t in enumerate(tokens):
-            prompt_tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
-
-        # add logits to q as we go
-        logits = model(prompt_tokens, 0)[:, -1]
-        q[i * batch_size:i * (batch_size + 1)] = logits.to("cpu")
-    
+    """    
     # compute singular values and prepare them to find the multiplicative gap
     u, s, _ = torch.linalg.svd(q.T.to(torch.float64), full_matrices=False)
     s_dim = torch.log(s.abs())
@@ -108,3 +140,84 @@ def layer_extraction(w, u, s, h_dim):
     g = torch.linalg.lstsq(pred_w, w.to(torch.float64)).solution
 
     return pred_w, g
+
+
+#######################################################################################################################
+# Paper Section 5 Methods
+#######################################################################################################################
+@torch.inference_mode()
+def incremental_logit_extraction(llama, prompt):
+    """
+    Incrementally construct logit vector by using logit biases to promote sets of tokens for each query.
+    Subtract the bias from the output logits to find their actual values and repeat for all tokens.
+    """
+    n_words = llama.tokenizer.n_words
+    out_logits = torch.zeros((n_words,))
+
+    tokens = [llama.tokenizer.encode(prompt, bos=True, eos=False)]
+
+    # pad tokens following llama implementation
+    max_prompt_len = max(len(t) for t in tokens)
+    prompt_tokens = torch.full(
+        (1, max_prompt_len),
+        llama.tokenizer.pad_id,
+        dtype=torch.long,
+        device="cuda"
+    )
+    for k, t in enumerate(tokens):
+        prompt_tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+
+    # mimic a logit api
+    bias = 100
+    logits = llama.model(prompt_tokens, 0)[:, -1]
+
+    for i in range(0, n_words, 5):
+        # act as though we add bias internally just for demonstration
+        sampled_logits = logits.clone()
+        sampled_logits[:, i:i+5] += bias
+
+        # return topk logits and their tokens
+        outputs = torch.topk(sampled_logits, 5)
+        top_logits = outputs.values[0] - bias
+        top_tokens = outputs.indices[0]
+        
+        out_logits[top_tokens] = top_logits.half()  # assume that bias pushes ref token to k
+    
+    return out_logits
+
+
+def reference_extraction(llama, prompt):
+    n_words = llama.tokenizer.n_words
+    logits = torch.zeros((n_words,))
+
+    prompt_tokens = [llama.tokenizer.encode(prompt, bos=True, eos=False)]
+
+    # compute our reference token and its logprob
+    out_tokens, logprobs = llama.generate(
+        prompt_tokens=prompt_tokens,
+        max_gen_len=1,
+        temperature=0,
+        logprobs=True,
+        k=1
+    )
+
+    ref_token = out_tokens[0][0]
+
+    bias = 100
+
+    for i in range(0, n_words, 4):
+        logitbias = {i+k:bias for k in range(4) if i + k != ref_token}
+        out_tokens, logprobs = llama.generate(
+            prompt_tokens=prompt_tokens,
+            max_gen_len=1,
+            temperature=0,
+            logprobs=True,
+            logitbias=logitbias,
+            k=5
+        )
+
+        token_logits = logprobs[0]["values"][0, -1] - (logprobs[0]["values"][0] - bias)
+        tokens = logprobs[0]["tokens"][0, :-1]
+        logits[tokens] = token_logits[:-1].half()  # assume that bias pushes ref token to k
+    
+    return logits
