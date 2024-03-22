@@ -17,6 +17,7 @@ from llama.model import ModelArgs, Transformer
 from llama.tokenizer import Tokenizer
 
 
+# Referencing https://github.com/meta-llama/llama
 class LlamaAPI():
     @staticmethod
     def build(
@@ -28,7 +29,7 @@ class LlamaAPI():
         seed: int = 1,
     ) -> "LlamaAPI":
         """
-        Build a Llama instance by initializing and loading a pre-trained model.
+        Build a LlamaAPI instance by initializing and loading a pre-trained model.
 
         Args:
             ckpt_dir (str): Path to the directory containing checkpoint files.
@@ -39,7 +40,7 @@ class LlamaAPI():
                 If not provided, it's determined from the environment. Defaults to None.
 
         Returns:
-            Llama: An instance of the Llama class with the loaded model and tokenizer.
+            LlamaAPI: An instance of the LlamaAPI class with the loaded model and tokenizer.
 
         Raises:
             AssertionError: If there are no checkpoint files in the specified directory,
@@ -108,7 +109,7 @@ class LlamaAPI():
         logprobs: bool = False,
         logitbias: dict = None,
         echo: bool = False,
-        k: torch.sym_int = 1,
+        k: int = 1,
     ) -> Tuple[List[List[int]], Optional[List[List[float]]]]:
         """
         Generate text sequences based on provided prompts using the language generation model.
@@ -119,15 +120,18 @@ class LlamaAPI():
             temperature (float, optional): Temperature value for controlling randomness in sampling. Defaults to 0.6.
             top_p (float, optional): Top-p probability threshold for nucleus sampling. Defaults to 0.9.
             logprobs (bool, optional): Flag indicating whether to compute token log probabilities. Defaults to False.
-            logitbias (dict, optional): Tokens and the associated biases to be added to appropriate output logits. 
+            logitbias (dict, optional): Tokens and the associated biases to be added to appropriate output logits.  Defaults to None.
             echo (bool, optional): Flag indicating whether to include prompt tokens in the generated output. Defaults to False.
+            k (int): top-k logprobs and tokens to return. Defaults to 1.
 
         Returns:
-            Tuple[List[List[int]], Optional[List[List[float]]]]: A tuple containing generated token sequences and, if logprobs is True, corresponding token log probabilities.
+            Tuple[List[List[int]], Optional[List[List[float]]]]: A tuple containing generated token sequences and, if logprobs is True, corresponding token log probabilities with
+            their associated tokens.
 
         Note:
             This method uses the provided prompts as a basis for generating text. It employs nucleus sampling to produce text with controlled randomness.
             If logprobs is True, token log probabilities are computed for each generated token.
+            If k > 1, the top-k token log probabilities and the associated tokens are also returned.
 
         """
         params = self.model.params
