@@ -15,7 +15,7 @@ def get_q(
     text_key: str,
     n: int = 5000,
     batch_size: int = 1,
-    logit_fn: Callable[[nn.Module, str], nn.Tensor] = None
+    logit_fn: Callable[[nn.Module, str], torch.Tensor] = None
 ):
     """
     Args:
@@ -168,7 +168,7 @@ def layer_extraction(w, u, s, h_dim):
 # Paper Section 5 Methods
 #######################################################################################################################
 @torch.inference_mode()
-def topk_logit_extraction(llama, prompt):
+def topk_logit_extraction(llama, prompt, k=5):
     """
     Incrementally construct logit vector by using logit biases to promote sets of tokens for each query.
     Subtract the bias from the output logits to find their actual values and repeat for all tokens.
@@ -193,13 +193,13 @@ def topk_logit_extraction(llama, prompt):
     bias = 100
     logits = llama.model(prompt_tokens, 0)[:, -1]
 
-    for i in range(0, n_words, 5):
+    for i in range(0, n_words, k):
         # act as though we add bias internally just for demonstration
         sampled_logits = logits.clone()
-        sampled_logits[:, i:i+5] += bias
+        sampled_logits[:, i:i+k] += bias
 
         # return topk logits and their tokens
-        outputs = torch.topk(sampled_logits, 5)
+        outputs = torch.topk(sampled_logits, k)
         top_logits = outputs.values[0] - bias
         top_tokens = outputs.indices[0]
         
@@ -208,7 +208,12 @@ def topk_logit_extraction(llama, prompt):
     return out_logits
 
 
-def reference_extraction(llama, prompt):
+def topk_logprob_ref_extraction(llama, prompt, k=5):
+    """
+    Incrementally construct logit vector by using logit biases to promote sets of tokens for each query
+    while maintaining a reference token.
+    Compute relative logit differences between reference token and other promoted tokens.
+    """
     n_words = llama.tokenizer.n_words
     logits = torch.zeros((n_words,))
 
@@ -227,17 +232,19 @@ def reference_extraction(llama, prompt):
 
     bias = 100
 
-    for i in range(0, n_words, 4):
-        logitbias = {i+k:bias for k in range(4) if i + k != ref_token}
+    for i in range(0, n_words, k-1):
+        # promote at most 4 tokens that are not the reference token
+        logitbias = {min(i+j, n_words-1):bias for j in range(k-1) if i + j != ref_token}
         out_tokens, logprobs = llama.generate(
             prompt_tokens=prompt_tokens,
             max_gen_len=1,
             temperature=0,
             logprobs=True,
             logitbias=logitbias,
-            k=5
+            k=len(logitbias) + 1  # avoid unadjusted tokens in top-k logprobs
         )
-
+        
+        # find relative logit difference between reference and promoted tokens
         token_logits = logprobs[0]["values"][0, -1] - (logprobs[0]["values"][0] - bias)
         tokens = logprobs[0]["tokens"][0, :-1]
         logits[tokens] = token_logits[:-1].half()  # assume that bias pushes ref token to k
