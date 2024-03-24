@@ -9,7 +9,7 @@ Llama 2 7b:
 - Predict RMSNorm as normalization layer
 - Last layer reconstructed with an RMS of $2 * 10^{-5}$
 
-### Techniques
+### Methods
 With All Logits Available:
 - [x] Recovering Hidden Dimensionality
     - [x] Normalization Layer Prediction
@@ -19,7 +19,8 @@ With Top-K Logits and Logit-bias
 - [ ] Recover complete logit vector
     - [x] Top-K logits
     - [x] Top-K logprobs
-    - [ ] Only generated logprobs  
+        - [ ] linear constraint method
+    - [x] Cost-optimal Top-K logprobs variant  
     - [ ] Top-1 Logprob
 
 Logprob-free
