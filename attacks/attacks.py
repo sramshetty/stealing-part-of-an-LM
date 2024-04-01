@@ -304,3 +304,54 @@ def topk_logprob_exp_extraction(llama, prompt, k=5, exp_size=10):
         logits[torch.arange(exp_size).unsqueeze(-1), tokens] = token_logits.half()  # assume that bias pushes ref token to k
     
     return logits
+
+
+def token_logprob_extraction(llama, prompt):
+    """
+    Method described in section 5.4
+    Incrementally construct logit vector by using logit biases.
+    Specifically, compute a token's logprob using the top token's logprob change
+    when generating with a logit bias of 0 and -1 for the specific token.
+
+    NOTE: Expensive to compute all logits with this method.
+    """
+
+    n_words = llama.tokenizer.n_words
+
+    prompt_tokens = [llama.tokenizer.encode(prompt, bos=True, eos=False)]
+
+    # compute our reference token and its logprob
+    out_tokens, logprobs = llama.generate(
+        prompt_tokens=prompt_tokens,
+        max_gen_len=1,
+        temperature=0,
+        logprobs=True,
+        k=1
+    )
+
+    top_token = out_tokens[0][0]
+    top_logprob = logprobs[0]["values"][0, 0]
+
+    # store top token's logprob when we apply a bias of -1 for all other tokens
+    bias_logprobs = []
+    for i in tqdm(range(n_words), desc="collecting logit bias logprobs"):
+        if i == top_token:
+            bias_logprobs.append(logprobs[0]["values"][0, 0])
+            continue
+        
+        logitbias = {i:-1}
+        _, logprobs = llama.generate(
+            prompt_tokens=prompt_tokens,
+            max_gen_len=1,
+            temperature=0,
+            logprobs=True,
+            logitbias=logitbias,
+            k=1
+        )
+        
+        bias_logprobs.append(logprobs[0]["values"][0, 0])
+    
+    logprobs = (torch.exp(torch.tensor(top_logprob) - torch.tensor(bias_logprobs)) - 1) / ((1 / torch.e) - 1)
+
+    # TODO: can we use logprobs directly in place of logits for last layer computation?        
+    return logprobs
