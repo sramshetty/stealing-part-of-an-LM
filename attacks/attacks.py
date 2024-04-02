@@ -315,7 +315,6 @@ def token_logprob_extraction(llama, prompt):
 
     NOTE: Expensive to compute all logits with this method.
     """
-
     n_words = llama.tokenizer.n_words
 
     prompt_tokens = [llama.tokenizer.encode(prompt, bos=True, eos=False)]
@@ -355,3 +354,64 @@ def token_logprob_extraction(llama, prompt):
 
     # TODO: can we use logprobs directly in place of logits for last layer computation?        
     return logprobs
+
+
+def binary_search_extraction(llama, prompt, error=0.5):
+    """
+    Method described in section 6.1
+    Incrementally construct logit vector by finding logit bias for each token that
+    causes it to be the the top-token (output with probability of 1 when temperature is 0).
+    """
+    n_words = llama.tokenizer.n_words
+    logits = torch.zeros((n_words,))
+
+    prompt_tokens = [llama.tokenizer.encode(prompt, bos=True, eos=False)]
+
+    # compute our reference token
+    out_tokens, _ = llama.generate(
+        prompt_tokens=prompt_tokens,
+        max_gen_len=1,
+        temperature=0,
+        k=1
+    )
+
+    bias = 100
+
+    try:
+        top_token = out_tokens[0][0]
+    except IndexError:
+        # if no token is output, then eos reached
+        top_token = llama.tokenizer.eos_id
+
+    for token in range(n_words):
+        if token == top_token:
+            continue
+
+        alpha = -bias
+        beta = 0
+        while beta - alpha > error:
+            mid = (alpha + beta) / 2
+
+            logitbias = {token:-mid}
+            out_tokens, _ = llama.generate(
+                prompt_tokens=prompt_tokens,
+                max_gen_len=1,
+                temperature=0,
+                logitbias=logitbias,
+                k=1
+            )
+            
+            try:
+                curr_top_token = out_tokens[0][0]
+            except IndexError:
+                # if no token is output, then eos reached
+                curr_top_token = llama.tokenizer.eos_id
+
+            if curr_top_token == top_token:
+                beta = mid
+            else:
+                alpha = mid
+        
+        logits[token] = beta - alpha
+    
+    return logits

@@ -26,6 +26,9 @@ With Top-K Logits and Logit-bias
 
 Logprob-free
 - [ ] Recover complete logit vector
+    - [x] Binary Search
+        - Have not tested logit recovery due to limited resources. 
+    - [ ] Hyperrectangle Relaxation Center
 
 
 ### Citation
