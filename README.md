@@ -21,7 +21,8 @@ With Top-K Logits and Logit-bias
     - [x] Top-K logprobs
         - [ ] linear constraint method
     - [x] Cost-optimal Top-K logprobs variant  
-    - [ ] Top-1 Logprob
+    - [x] Top-1 Logprob
+        - Have not tested logit recovery due to limited resources. 
 
 Logprob-free
 - [ ] Recover complete logit vector
