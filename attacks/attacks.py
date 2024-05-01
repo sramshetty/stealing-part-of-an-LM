@@ -356,6 +356,9 @@ def token_logprob_extraction(llama, prompt):
     return logprobs
 
 
+#######################################################################################################################
+# Paper Section 6 Methods
+#######################################################################################################################
 def binary_search_extraction(llama, prompt, error=0.5):
     """
     Method described in section 6.1
@@ -375,8 +378,6 @@ def binary_search_extraction(llama, prompt, error=0.5):
         k=1
     )
 
-    bias = 100
-
     try:
         top_token = out_tokens[0][0]
     except IndexError:
@@ -387,7 +388,7 @@ def binary_search_extraction(llama, prompt, error=0.5):
         if token == top_token:
             continue
 
-        alpha = -bias
+        alpha = -100
         beta = 0
         while beta - alpha > error:
             mid = (alpha + beta) / 2
