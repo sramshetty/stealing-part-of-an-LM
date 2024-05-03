@@ -413,6 +413,6 @@ def binary_search_extraction(llama, prompt, error=0.5):
             else:
                 alpha = mid
         
-        logits[token] = beta - alpha
+        logits[token] = (beta - alpha) / 2
     
     return logits
