@@ -416,3 +416,96 @@ def binary_search_extraction(llama, prompt, error=0.5):
         logits[token] = (beta - alpha) / 2
     
     return logits
+
+
+def hyperrectangle_extraction(llama, prompt, N=10, T=10, better_queries=False):
+    """
+    Method described in section 6.2
+    Incrementally construct logit vector by modifying logit bias for multiple tokens.
+    
+    Referencing: https://github.com/dpaleka/stealing-part-lm-supplementary/tree/main/optimize_logit_queries
+    """
+    n_words = llama.tokenizer.n_words
+    logits = torch.zeros((n_words,))
+
+    prompt_tokens = [llama.tokenizer.encode(prompt, bos=True, eos=False)]
+    
+    # compute our reference token
+    out_tokens, _ = llama.generate(
+        prompt_tokens=prompt_tokens,
+        max_gen_len=1,
+        temperature=0,
+        k=1
+    )
+
+    try:
+        top_token = out_tokens[0][0]
+    except IndexError:
+        # if no token is output, then eos reached
+        top_token = llama.tokenizer.eos_id
+    
+    for start_token in range(0, n_words, N):
+        alphas = dict()
+        betas = dict()
+        curr_tokens = []
+        for token in range(start_token, start_token+N):
+            if token == top_token or llama.tokenizer.eos_id:
+                continue
+            curr_tokens.append(token)
+            alphas[token] = -100
+            betas[token] = 0
+        
+        num_tokens = len(curr_tokens)
+        constraints = torch.zeros((num_tokens * num_tokens + 1, num_tokens + 1))
+        biases = torch.zeros((num_tokens * num_tokens + 1))
+
+        # initialize contraints
+        for t in range(num_tokens):
+            constraints[t * num_tokens + num_tokens, t] = 1
+            constraints[t * num_tokens + num_tokens, num_tokens] = -1
+            biases[t * num_tokens + num_tokens] = 100
+
+        for _ in range(T):
+            logitbias = dict()
+            for token in curr_tokens:
+                if better_queries:
+                    c = torch.exp(-torch.log(num_tokens) / (num_tokens - 1))
+                    mid = -(1 - c) * alphas[token] - c * betas[token]
+                else:
+                    mid = -(alphas[token] + betas[token]) / 2
+                logitbias[token] = mid
+
+            out_tokens, _ = llama.generate(
+                prompt_tokens=prompt_tokens,
+                max_gen_len=1,
+                temperature=0,
+                logitbias=logitbias,
+                k=N
+            )
+            out_tokens = out_tokens[0]
+
+            for i, tok_i in enumerate(out_tokens):
+                for j, tok_j in enumerate(out_tokens):
+                    if i == j:
+                        continue
+                    constraints[i * num_tokens + j, i] = -1
+                    constraints[i * num_tokens + j, j] = 1
+                    biases[i * num_tokens + j] = logitbias[tok_j] - logitbias[tok_i]
+
+            # base token constraint
+            constraints[-1, -1] = 1
+            biases[-1] = 100
+
+            X = torch.linalg.lstsq(constraints, biases).solution
+
+            # update alphas and betas
+            for t, token in enumerate(num_tokens):
+                # paper minimizes both?
+                # maybe need to use bounder such as: https://github.com/dpaleka/stealing-part-lm-supplementary/blob/main/optimize_logit_queries/bounders/iterate_constraints.py
+                alphas[token] = max(X[t] - X[-1], alphas[token])
+                betas[token] = min(X[t] - X[-1], alphas[token])
+
+        for token in curr_tokens:
+            logits[token] = (betas[token] - alphas[token]) / 2
+    
+    return logits

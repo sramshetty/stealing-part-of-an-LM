@@ -1,8 +1,8 @@
-# Stealing Part of a Language Model (WIP)
+# Stealing Part of a Language Model
 An unofficial implementation of ["Stealing Part of a Production Language Model"](https://arxiv.org/abs/2403.06634)
 
 ### Details
-Attack reimplementations are for research and model safety/defense purposes alone.
+Attack reimplementations are for research and model safety/defense purposes alone. We don't use any proprietary API for the detailed experiments.
 
 Llama 2 7b:
 - Recover hidden dim $\pm 1$: 4095
@@ -24,17 +24,20 @@ With Top-K Logits and Logit-bias
         - Have not tested logit recovery due to limited resources. 
 
 Logprob-free
-- [ ] Recover complete logit vector
+- [x] Recover complete logit vector
     - [x] Binary Search
-        - Have not tested logit recovery due to limited resources. 
-    - [ ] Hyperrectangle Relaxation Center
-        - [ ] With better queries
+    - [x] Hyperrectangle Relaxation Center
+        - [x] With better queries
+        - Bounding methods can be referenced [here](https://github.com/dpaleka/stealing-part-lm-supplementary/tree/main/optimize_logit_queries/bounders).
+    - Have not tested logit recovery due to limited resources. 
 
 ### Extras
 - [ ] Optimized Top-K logprobs method with linear constraint
 - [ ] Shortest path formulation of logprob-free attack
 
 ### Citation
+Authors published their own supplementary code after this repo was made, so please do reference theirs for any additional necessary clarity. You can find their repository [here](https://github.com/dpaleka/stealing-part-lm-supplementary).
+
 ```bibtex
 @misc{carlini2024stealing,
     title={Stealing Part of a Production Language Model}, 
